@@ -57,15 +57,15 @@
 #define CMD_SET_FLOOD_SCOPE           54   // v8+
 #define CMD_SEND_CONTROL_DATA         55   // v8+
 #define CMD_GET_STATS                 56   // v8+, second byte is stats type
-#define CMD_GET_RADIO_SETTINGS        57
 #define CMD_SEND_ANON_REQ             57
 #define CMD_SET_AUTOADD_CONFIG        58
 #define CMD_GET_AUTOADD_CONFIG        59
 #define CMD_GET_ALLOWED_REPEAT_FREQ   60
-#define CMD_SET_MAX_HOPS              61  // Adaptive forwarding control
-#define CMD_SEND_ANON_REQ             62  // Send anonymous request
-#define CMD_SET_AUTOADD_CONFIG        63  // Set auto-add contacts config
-#define CMD_GET_AUTOADD_CONFIG        64  // Get auto-add contacts config
+#define CMD_GET_RADIO_SETTINGS        61
+#define CMD_SET_MAX_HOPS              62  // Adaptive forwarding control
+#define CMD_SEND_ANON_REQ             63  // Send anonymous request
+#define CMD_SET_AUTOADD_CONFIG        64  // Set auto-add contacts config
+#define CMD_GET_AUTOADD_CONFIG        65  // Get auto-add contacts config
 
 // Stats sub-types for CMD_GET_STATS
 #define STATS_TYPE_CORE               0
