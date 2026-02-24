@@ -61,10 +61,10 @@
 #define CMD_SET_AUTOADD_CONFIG        58
 #define CMD_GET_AUTOADD_CONFIG        59
 #define CMD_GET_ALLOWED_REPEAT_FREQ   60
-#define CMD_GET_RADIO_SETTINGS        61
-#define CMD_SET_MAX_HOPS              62  // Adaptive forwarding control
 
 // Custom TEAM extensions (kept out of stock command space)
+#define CMD_GET_RADIO_SETTINGS        72
+#define CMD_SET_MAX_HOPS              73  // Adaptive forwarding control
 #define CMD_SET_FORWARD_LIST          74  // [count][6-byte pubkey prefix] * count
 #define CMD_GET_AUTONOMOUS_SETTINGS   75  // returns persisted autonomous settings
 #define CMD_SET_AUTONOMOUS_SETTINGS   76  // set persisted autonomous settings
@@ -515,6 +515,21 @@ bool MyMesh::isInForwardList(const uint8_t* pub_key_prefix) const {
   return false;
 }
 
+bool MyMesh::hasValidGpsFix() const {
+  if (_prefs.gps_enabled == 0) return false;
+
+  const double lat = sensors.node_lat;
+  const double lon = sensors.node_lon;
+
+  if (lat < -90.0 || lat > 90.0) return false;
+  if (lon < -180.0 || lon > 180.0) return false;
+
+  // Startup/default sentinel used when no fix has been captured yet.
+  if (lat == 0.0 && lon == 0.0) return false;
+
+  return true;
+}
+
 void MyMesh::updateForwardListPolicyState() {
   if (forward_list_updated_at == 0) return;
 
@@ -538,6 +553,7 @@ void MyMesh::updateForwardListPolicyState() {
 bool MyMesh::shouldSendAutonomousUpdate() {
   if (_prefs.autonomous_enabled == 0) return false;
   if (_serial && _serial->isConnected()) return false; // autonomous mode is for disconnected operation
+  if (!hasValidGpsFix()) return false;
 
   unsigned long interval_ms = (unsigned long)_prefs.autonomous_interval_sec * 1000UL;
   if (interval_ms < 10000UL) interval_ms = 10000UL;
@@ -2034,7 +2050,10 @@ void MyMesh::handleCmdFrame(size_t len) {
     _serial->writeFrame(out_frame, i);
   } else if (cmd_frame[0] == CMD_SET_FORWARD_LIST && len >= 2) {
     uint8_t count = cmd_frame[1];
-    if (count > FORWARD_LIST_MAX) count = FORWARD_LIST_MAX;
+    if (count > FORWARD_LIST_MAX) {
+      writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+      return;
+    }
 
     const int needed = 2 + (count * 6);
     if (len < needed) {
@@ -2048,8 +2067,10 @@ void MyMesh::handleCmdFrame(size_t len) {
       }
 
       forward_list_count = count;
-      forward_list_updated_at = millis();
       forwarding_hard_disabled = false;
+
+      // Empty list means: no whitelist policy active; rely only on flood_max logic.
+      forward_list_updated_at = (count > 0) ? millis() : 0;
 
       MESH_DEBUG_PRINTLN("FORWARD: whitelist updated (%u entries)", (unsigned int)forward_list_count);
       writeOKFrame();
@@ -2074,6 +2095,12 @@ void MyMesh::handleCmdFrame(size_t len) {
 
     interval_sec = constrain(interval_sec, 10, 3600);
     min_distance_m = constrain(min_distance_m, 0, 5000);
+
+    if (enabled && !hasValidGpsFix()) {
+      MESH_DEBUG_PRINTLN("Error: CMD_SET_AUTONOMOUS_SETTINGS: GPS disabled or no valid fix");
+      writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+      return;
+    }
 
     _prefs.autonomous_enabled = enabled;
     _prefs.autonomous_channel_hash = channel_hash;
