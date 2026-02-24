@@ -230,6 +230,26 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     file.read((uint8_t *)&_prefs.autoadd_config, sizeof(_prefs.autoadd_config));           // 90
     file.read((uint8_t *)&_prefs.flood_max, sizeof(_prefs.flood_max));                     // 91
 
+    // Optional appended fields for newer firmware versions.
+    // Keep backward compatibility with older prefs files.
+    _prefs.autonomous_enabled = 0;
+    _prefs.autonomous_channel_hash = 0;
+    _prefs.autonomous_interval_sec = 30;
+    _prefs.autonomous_min_distance_m = 0;
+
+    if (file.available() >= (int)sizeof(_prefs.autonomous_enabled)) {
+      file.read((uint8_t *)&_prefs.autonomous_enabled, sizeof(_prefs.autonomous_enabled));
+    }
+    if (file.available() >= (int)sizeof(_prefs.autonomous_channel_hash)) {
+      file.read((uint8_t *)&_prefs.autonomous_channel_hash, sizeof(_prefs.autonomous_channel_hash));
+    }
+    if (file.available() >= (int)sizeof(_prefs.autonomous_interval_sec)) {
+      file.read((uint8_t *)&_prefs.autonomous_interval_sec, sizeof(_prefs.autonomous_interval_sec));
+    }
+    if (file.available() >= (int)sizeof(_prefs.autonomous_min_distance_m)) {
+      file.read((uint8_t *)&_prefs.autonomous_min_distance_m, sizeof(_prefs.autonomous_min_distance_m));
+    }
+
     file.close();
   }
 }
@@ -265,6 +285,12 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.gps_interval, sizeof(_prefs.gps_interval));               // 86
     file.write((uint8_t *)&_prefs.autoadd_config, sizeof(_prefs.autoadd_config));           // 90
     file.write((uint8_t *)&_prefs.flood_max, sizeof(_prefs.flood_max));                     // 91
+
+    // Appended autonomous tracker fields.
+    file.write((uint8_t *)&_prefs.autonomous_enabled, sizeof(_prefs.autonomous_enabled));
+    file.write((uint8_t *)&_prefs.autonomous_channel_hash, sizeof(_prefs.autonomous_channel_hash));
+    file.write((uint8_t *)&_prefs.autonomous_interval_sec, sizeof(_prefs.autonomous_interval_sec));
+    file.write((uint8_t *)&_prefs.autonomous_min_distance_m, sizeof(_prefs.autonomous_min_distance_m));
 
     file.close();
   }

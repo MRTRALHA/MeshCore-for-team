@@ -29,4 +29,10 @@ struct NodePrefs {  // persisted to file
   uint32_t gps_interval;     // GPS read interval in seconds
   uint8_t autoadd_config;    // bitmask for auto-add contacts config
   uint8_t flood_max;         // Max hops for packet forwarding (0=disabled, 1-127=max hops)
+
+  // Autonomous tracker settings
+  uint8_t autonomous_enabled;        // 0=disabled, 1=enabled
+  uint8_t autonomous_channel_hash;   // reserved for channel-targeted autonomous telemetry
+  uint16_t autonomous_interval_sec;  // autonomous interval (seconds)
+  uint16_t autonomous_min_distance_m; // min movement trigger in meters (0=disabled)
 };
