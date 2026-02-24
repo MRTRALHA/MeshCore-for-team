@@ -161,6 +161,8 @@ public:
   void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
 
 private:
+  static const uint8_t FORWARD_LIST_MAX = 20;
+
   void writeOKFrame();
   void writeErrFrame(uint8_t err_code);
   void writeDisabledFrame();
@@ -178,6 +180,13 @@ private:
   void checkCLIRescueCmd();
   void checkSerialInterface();
   bool isValidClientRepeatFreq(uint32_t f) const;
+
+  bool extractSenderNameFromGroupPayload(const mesh::Packet* packet, char* sender_name, size_t max_len);
+  bool lookupContactPrefixByName(const char* sender_name, uint8_t out_pub_key_prefix[6]);
+  bool isInForwardList(const uint8_t* pub_key_prefix) const;
+  void updateForwardListPolicyState();
+  bool shouldSendAutonomousUpdate();
+  void runAutonomousMode();
 
   // helpers, short-cuts
   void saveChannels() { _store->saveChannels(this); }
@@ -204,6 +213,16 @@ private:
   uint8_t *sign_data;
   uint32_t sign_data_len;
   unsigned long dirty_contacts_expiry;
+
+  uint8_t forward_list[FORWARD_LIST_MAX][6];
+  uint8_t forward_list_count;
+  unsigned long forward_list_updated_at;
+  bool forwarding_hard_disabled;
+
+  unsigned long autonomous_last_sent_at;
+  double autonomous_last_lat;
+  double autonomous_last_lon;
+  bool autonomous_has_last_fix;
 
   TransportKey send_scope;
 

@@ -64,6 +64,11 @@
 #define CMD_GET_RADIO_SETTINGS        61
 #define CMD_SET_MAX_HOPS              62  // Adaptive forwarding control
 
+// Custom TEAM extensions (kept out of stock command space)
+#define CMD_SET_FORWARD_LIST          74  // [count][6-byte pubkey prefix] * count
+#define CMD_GET_AUTONOMOUS_SETTINGS   75  // returns persisted autonomous settings
+#define CMD_SET_AUTONOMOUS_SETTINGS   76  // set persisted autonomous settings
+
 // Stats sub-types for CMD_GET_STATS
 #define STATS_TYPE_CORE               0
 #define STATS_TYPE_RADIO              1
@@ -96,6 +101,7 @@
 #define RESP_CODE_STATS               24   // v8+, second byte is stats type
 #define RESP_CODE_AUTOADD_CONFIG      25
 #define RESP_ALLOWED_REPEAT_FREQ      26
+#define RESP_CODE_AUTONOMOUS_SETTINGS 27
 
 #define SEND_TIMEOUT_BASE_MILLIS        500
 #define FLOOD_SEND_TIMEOUT_FACTOR       16.0f
@@ -463,9 +469,122 @@ bool MyMesh::filterRecvFloodPacket(mesh::Packet* packet) {
   return false;
 }
 
+bool MyMesh::extractSenderNameFromGroupPayload(const mesh::Packet* packet, char* sender_name, size_t max_len) {
+  if (!packet || !sender_name || max_len < 2 || packet->payload_len <= 6) return false;
+
+  // Group text payload format starts at payload[5], usually: "SenderName: message"
+  const uint8_t* text_data = &packet->payload[5];
+  size_t text_len = packet->payload_len - 5;
+  size_t out_idx = 0;
+
+  for (size_t i = 0; i < text_len && out_idx < max_len - 1; i++) {
+    char c = (char)text_data[i];
+    if (c == '\0') break;
+    if (c == ':') {
+      sender_name[out_idx] = 0;
+      return out_idx > 0;
+    }
+    sender_name[out_idx++] = c;
+  }
+
+  sender_name[out_idx] = 0;
+  return false;
+}
+
+bool MyMesh::lookupContactPrefixByName(const char* sender_name, uint8_t out_pub_key_prefix[6]) {
+  if (!sender_name || !sender_name[0] || !out_pub_key_prefix) return false;
+
+  ContactInfo contact;
+  const int total = getNumContacts();
+  for (int i = 0; i < total; i++) {
+    if (getContactByIdx(i, contact) && strcmp(contact.name, sender_name) == 0) {
+      memcpy(out_pub_key_prefix, contact.id.pub_key, 6);
+      return true;
+    }
+  }
+  return false;
+}
+
+bool MyMesh::isInForwardList(const uint8_t* pub_key_prefix) const {
+  if (!pub_key_prefix) return false;
+  for (uint8_t i = 0; i < forward_list_count; i++) {
+    if (memcmp(forward_list[i], pub_key_prefix, 6) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void MyMesh::updateForwardListPolicyState() {
+  if (forward_list_updated_at == 0) return;
+
+  const unsigned long now = millis();
+  const unsigned long age = now - forward_list_updated_at;
+
+  // 10 min: list expires (fallback to flood_max behavior)
+  if (age >= 10UL * 60UL * 1000UL && forward_list_count > 0) {
+    forward_list_count = 0;
+    memset(forward_list, 0, sizeof(forward_list));
+    MESH_DEBUG_PRINTLN("FORWARD: whitelist expired (10m) -> reverting to flood_max behavior");
+  }
+
+  // 60 min: disable forwarding entirely until app refreshes policy
+  if (age >= 60UL * 60UL * 1000UL && !forwarding_hard_disabled) {
+    forwarding_hard_disabled = true;
+    MESH_DEBUG_PRINTLN("FORWARD: hard-disabled (60m stale policy)");
+  }
+}
+
+bool MyMesh::shouldSendAutonomousUpdate() {
+  if (_prefs.autonomous_enabled == 0) return false;
+  if (_serial && _serial->isConnected()) return false; // autonomous mode is for disconnected operation
+
+  unsigned long interval_ms = (unsigned long)_prefs.autonomous_interval_sec * 1000UL;
+  if (interval_ms < 10000UL) interval_ms = 10000UL;
+
+  const unsigned long now = millis();
+  if (autonomous_last_sent_at != 0 && (now - autonomous_last_sent_at) < interval_ms) {
+    return false;
+  }
+
+  if (_prefs.autonomous_min_distance_m == 0 || !autonomous_has_last_fix) {
+    return true;
+  }
+
+  const double dLat = (sensors.node_lat - autonomous_last_lat) * DEG_TO_RAD;
+  const double dLon = (sensors.node_lon - autonomous_last_lon) * DEG_TO_RAD;
+  const double a = sin(dLat / 2.0) * sin(dLat / 2.0)
+                 + cos(autonomous_last_lat * DEG_TO_RAD) * cos(sensors.node_lat * DEG_TO_RAD)
+                 * sin(dLon / 2.0) * sin(dLon / 2.0);
+  const double c = 2.0 * atan2(sqrt(a), sqrt(1.0 - a));
+  const double distance_m = 6371000.0 * c;
+
+  return distance_m >= _prefs.autonomous_min_distance_m;
+}
+
+void MyMesh::runAutonomousMode() {
+  if (!shouldSendAutonomousUpdate()) return;
+
+  if (advert()) {
+    autonomous_last_sent_at = millis();
+    autonomous_last_lat = sensors.node_lat;
+    autonomous_last_lon = sensors.node_lon;
+    autonomous_has_last_fix = true;
+    MESH_DEBUG_PRINTLN("AUTO: autonomous advert sent (interval=%lus, min_dist=%um)",
+                       (unsigned long)_prefs.autonomous_interval_sec,
+                       (unsigned int)_prefs.autonomous_min_distance_m);
+  }
+}
+
 bool MyMesh::allowPacketForward(const mesh::Packet* packet) {
   // Adaptive forwarding control for companion radios
   // Respects flood_max set by app via CMD_SET_MAX_HOPS (default 0 = disabled)
+  updateForwardListPolicyState();
+
+  if (forwarding_hard_disabled) {
+    MESH_DEBUG_PRINTLN("FORWARD: Blocked - hard disabled by stale whitelist policy");
+    return false;
+  }
   
   if (_prefs.flood_max == 0) {
     MESH_DEBUG_PRINTLN("FORWARD: Blocked - forwarding disabled (flood_max=0)");
@@ -491,6 +610,20 @@ bool MyMesh::allowPacketForward(const mesh::Packet* packet) {
         // This is a public channel message - block forwarding
         MESH_DEBUG_PRINTLN("FORWARD: Blocked - public channel message (type=%d)", (uint32_t)payload_type);
         return false;
+      }
+    }
+
+    // If whitelist is active, only forward messages from senders in list (when resolvable).
+    if (forward_list_count > 0 && payload_type == PAYLOAD_TYPE_GRP_TXT) {
+      char sender_name[32];
+      uint8_t sender_prefix[6];
+
+      if (extractSenderNameFromGroupPayload(packet, sender_name, sizeof(sender_name)) &&
+          lookupContactPrefixByName(sender_name, sender_prefix)) {
+        if (!isInForwardList(sender_prefix)) {
+          MESH_DEBUG_PRINTLN("FORWARD: Blocked by whitelist (sender=%s)", sender_name);
+          return false;
+        }
       }
     }
   }
@@ -840,6 +973,14 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   dirty_contacts_expiry = 0;
   memset(advert_paths, 0, sizeof(advert_paths));
   memset(send_scope.key, 0, sizeof(send_scope.key));
+  memset(forward_list, 0, sizeof(forward_list));
+  forward_list_count = 0;
+  forward_list_updated_at = 0;
+  forwarding_hard_disabled = false;
+  autonomous_last_sent_at = 0;
+  autonomous_last_lat = 0.0;
+  autonomous_last_lon = 0.0;
+  autonomous_has_last_fix = false;
 
   // defaults
   memset(&_prefs, 0, sizeof(_prefs));
@@ -852,6 +993,10 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.tx_power_dbm = LORA_TX_POWER;
   _prefs.gps_enabled = 0;       // GPS disabled by default
   _prefs.gps_interval = 0;      // No automatic GPS updates by default
+  _prefs.autonomous_enabled = 0;
+  _prefs.autonomous_channel_hash = 0;
+  _prefs.autonomous_interval_sec = 30;
+  _prefs.autonomous_min_distance_m = 0;
   //_prefs.rx_delay_base = 10.0f;  enable once new algo fixed
 }
 
@@ -891,6 +1036,9 @@ void MyMesh::begin(bool has_display) {
   _prefs.tx_power_dbm = constrain(_prefs.tx_power_dbm, -9, MAX_LORA_TX_POWER);
   _prefs.gps_enabled = constrain(_prefs.gps_enabled, 0, 1);  // Ensure boolean 0 or 1
   _prefs.gps_interval = constrain(_prefs.gps_interval, 0, 86400);  // Max 24 hours
+  _prefs.autonomous_enabled = constrain(_prefs.autonomous_enabled, 0, 1);
+  _prefs.autonomous_interval_sec = constrain(_prefs.autonomous_interval_sec, 10, 3600);
+  _prefs.autonomous_min_distance_m = constrain(_prefs.autonomous_min_distance_m, 0, 5000);
 
 #ifdef BLE_PIN_CODE // 123456 by default
   if (_prefs.ble_pin == 0) {
@@ -1026,7 +1174,7 @@ void MyMesh::handleCmdFrame(size_t len) {
     out_frame[i++] = 0; // Null terminator for device name
     
     // Firmware capability flags - tells app what features this firmware supports
-    out_frame[i++] = CAPABILITY_FORWARDING; // Currently supports adaptive forwarding
+    out_frame[i++] = CAPABILITY_FORWARDING | CAPABILITY_AUTONOMOUS;
     
     _serial->writeFrame(out_frame, i);
   } else if (cmd_frame[0] == CMD_SEND_TXT_MSG && len >= 14) {
@@ -1884,6 +2032,56 @@ void MyMesh::handleCmdFrame(size_t len) {
       memcpy(&out_frame[i], &r->upper_freq, 4); i += 4;
     }
     _serial->writeFrame(out_frame, i);
+  } else if (cmd_frame[0] == CMD_SET_FORWARD_LIST && len >= 2) {
+    uint8_t count = cmd_frame[1];
+    if (count > FORWARD_LIST_MAX) count = FORWARD_LIST_MAX;
+
+    const int needed = 2 + (count * 6);
+    if (len < needed) {
+      writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+    } else {
+      for (uint8_t i = 0; i < count; i++) {
+        memcpy(forward_list[i], &cmd_frame[2 + (i * 6)], 6);
+      }
+      for (uint8_t i = count; i < FORWARD_LIST_MAX; i++) {
+        memset(forward_list[i], 0, 6);
+      }
+
+      forward_list_count = count;
+      forward_list_updated_at = millis();
+      forwarding_hard_disabled = false;
+
+      MESH_DEBUG_PRINTLN("FORWARD: whitelist updated (%u entries)", (unsigned int)forward_list_count);
+      writeOKFrame();
+    }
+  } else if (cmd_frame[0] == CMD_GET_AUTONOMOUS_SETTINGS) {
+    int i = 0;
+    out_frame[i++] = RESP_CODE_AUTONOMOUS_SETTINGS;
+    out_frame[i++] = _prefs.autonomous_enabled;
+    out_frame[i++] = _prefs.autonomous_channel_hash;
+    memcpy(&out_frame[i], &_prefs.autonomous_interval_sec, sizeof(_prefs.autonomous_interval_sec));
+    i += sizeof(_prefs.autonomous_interval_sec);
+    memcpy(&out_frame[i], &_prefs.autonomous_min_distance_m, sizeof(_prefs.autonomous_min_distance_m));
+    i += sizeof(_prefs.autonomous_min_distance_m);
+    _serial->writeFrame(out_frame, i);
+  } else if (cmd_frame[0] == CMD_SET_AUTONOMOUS_SETTINGS && len >= 7) {
+    uint8_t enabled = constrain(cmd_frame[1], 0, 1);
+    uint8_t channel_hash = cmd_frame[2];
+    uint16_t interval_sec = 0;
+    uint16_t min_distance_m = 0;
+    memcpy(&interval_sec, &cmd_frame[3], sizeof(interval_sec));
+    memcpy(&min_distance_m, &cmd_frame[5], sizeof(min_distance_m));
+
+    interval_sec = constrain(interval_sec, 10, 3600);
+    min_distance_m = constrain(min_distance_m, 0, 5000);
+
+    _prefs.autonomous_enabled = enabled;
+    _prefs.autonomous_channel_hash = channel_hash;
+    _prefs.autonomous_interval_sec = interval_sec;
+    _prefs.autonomous_min_distance_m = min_distance_m;
+
+    savePrefs();
+    writeOKFrame();
   } else {
     writeErrFrame(ERR_CODE_UNSUPPORTED_CMD);
     MESH_DEBUG_PRINTLN("ERROR: unknown command: %02X", cmd_frame[0]);
@@ -2097,6 +2295,9 @@ void MyMesh::checkSerialInterface() {
 
 void MyMesh::loop() {
   BaseChatMesh::loop();
+
+  updateForwardListPolicyState();
+  runAutonomousMode();
 
   if (_cli_rescue) {
     checkCLIRescueCmd();
