@@ -2096,8 +2096,8 @@ void MyMesh::handleCmdFrame(size_t len) {
     interval_sec = constrain(interval_sec, 10, 3600);
     min_distance_m = constrain(min_distance_m, 0, 5000);
 
-    if (enabled && !hasValidGpsFix()) {
-      MESH_DEBUG_PRINTLN("Error: CMD_SET_AUTONOMOUS_SETTINGS: GPS disabled or no valid fix");
+    if (enabled && !sensors.hasGpsUnit()) {
+      MESH_DEBUG_PRINTLN("Error: CMD_SET_AUTONOMOUS_SETTINGS: No GPS unit detected");
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
       return;
     }
