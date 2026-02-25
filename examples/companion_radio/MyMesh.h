@@ -184,6 +184,7 @@ private:
   bool extractSenderNameFromGroupPayload(const mesh::Packet* packet, char* sender_name, size_t max_len);
   bool lookupContactPrefixByName(const char* sender_name, uint8_t out_pub_key_prefix[6]);
   bool isInForwardList(const uint8_t* pub_key_prefix) const;
+  bool hasValidGpsFix() const;
   void updateForwardListPolicyState();
   bool shouldSendAutonomousUpdate();
   void runAutonomousMode();
