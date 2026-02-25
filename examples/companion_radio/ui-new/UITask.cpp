@@ -34,17 +34,16 @@
 class SplashScreen : public UIScreen {
   UITask* _task;
   unsigned long dismiss_after;
-  char _version_info[12];
+  char _version_info[20];
 
 public:
   SplashScreen(UITask* task) : _task(task) {
-    // strip off dash and commit hash by changing dash to null terminator
-    // e.g: v1.2.3-abcdef -> v1.2.3
-    const char *ver = FIRMWARE_VERSION;
+    // Use TEAM_FIRMWARE_VERSION (e.g. "v1.13.0.1"), stripping any git commit suffix.
+    const char *ver = TEAM_FIRMWARE_VERSION;
     const char *dash = strchr(ver, '-');
 
     int len = dash ? dash - ver : strlen(ver);
-    if (len >= sizeof(_version_info)) len = sizeof(_version_info) - 1;
+    if (len >= (int)sizeof(_version_info)) len = sizeof(_version_info) - 1;
     memcpy(_version_info, ver, len);
     _version_info[len] = 0;
 
@@ -52,23 +51,24 @@ public:
   }
 
   int render(DisplayDriver& display) override {
-    // meshcore logo
+    // Brand name - top line
     display.setColor(DisplayDriver::BLUE);
-    int logoWidth = 128;
-    display.drawXbm((display.width() - logoWidth) / 2, 3, meshcore_logo, logoWidth, 13);
+    display.setTextSize(2);
+    display.drawTextCentered(display.width()/2, 6, "MeshCore");
 
-    // TEAM branding
+    // Sub-brand
     display.setColor(DisplayDriver::GREEN);
     display.setTextSize(1);
-    display.drawTextCentered(display.width()/2, 18, "TEAM Edition");
+    display.drawTextCentered(display.width()/2, 22, "Team Edition");
 
-    // version info
+    // Version
     display.setColor(DisplayDriver::LIGHT);
     display.setTextSize(2);
-    display.drawTextCentered(display.width()/2, 28, _version_info);
+    display.drawTextCentered(display.width()/2, 32, _version_info);
 
+    // Build date
     display.setTextSize(1);
-    display.drawTextCentered(display.width()/2, 48, FIRMWARE_BUILD_DATE);
+    display.drawTextCentered(display.width()/2, 50, FIRMWARE_BUILD_DATE);
 
     return 1000;
   }
@@ -209,6 +209,23 @@ public:
     }
 
     if (_page == HomePage::FIRST) {
+      if (_node_prefs->autonomous_enabled) {
+        // Autonomous mode: show status indicator and suppress message count.
+        display.setColor(DisplayDriver::GREEN);
+        display.setTextSize(2);
+        display.drawTextCentered(display.width() / 2, 20, "AUTONOMOUS");
+
+        if (_task->hasConnection()) {
+          display.setColor(DisplayDriver::GREEN);
+          display.setTextSize(1);
+          display.drawTextCentered(display.width() / 2, 43, "< Connected >");
+        } else if (the_mesh.getBLEPin() != 0) {
+          display.setColor(DisplayDriver::RED);
+          display.setTextSize(2);
+          sprintf(tmp, "Pin:%d", the_mesh.getBLEPin());
+          display.drawTextCentered(display.width() / 2, 43, tmp);
+        }
+      } else {
       display.setColor(DisplayDriver::YELLOW);
       display.setTextSize(2);
       sprintf(tmp, "MSG: %d", _task->getMsgCount());
@@ -230,6 +247,7 @@ public:
         display.setTextSize(2);
         sprintf(tmp, "Pin:%d", the_mesh.getBLEPin());
         display.drawTextCentered(display.width() / 2, 43, tmp);
+      }
       }
     } else if (_page == HomePage::RECENT) {
       the_mesh.getRecentlyHeard(recent, UI_RECENT_LIST_SIZE);
@@ -643,6 +661,10 @@ void UITask::msgRead(int msgcount) {
 
 void UITask::newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount) {
   _msgcount = msgcount;
+
+  // In autonomous mode, suppress the message preview screen - the device is
+  // unattended and switching away from the status screen is not useful.
+  if (_node_prefs && _node_prefs->autonomous_enabled) return;
 
   ((MsgPreviewScreen *) msg_preview)->addPreview(path_len, from_name, text);
   setCurrScreen(msg_preview);

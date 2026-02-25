@@ -15,6 +15,11 @@
 #define FIRMWARE_VERSION "v1.13.0"
 #endif
 
+// TEAM build number appended to base firmware version (increment each release).
+#define TEAM_VERSION "1"
+// e.g. "v1.13.0.1"
+#define TEAM_FIRMWARE_VERSION FIRMWARE_VERSION "." TEAM_VERSION
+
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
 #include <InternalFileSystem.h>
 #elif defined(RP2040_PLATFORM)

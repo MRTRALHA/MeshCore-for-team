@@ -45,13 +45,13 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 
   // strip off dash and commit hash by changing dash to null terminator
   // e.g: v1.2.3-abcdef -> v1.2.3
-  char *version = strdup(FIRMWARE_VERSION);
+  char *version = strdup(TEAM_FIRMWARE_VERSION);
   char *dash = strchr(version, '-');
   if (dash) {
     *dash = 0;
   }
 
-  // v1.2.3 (1 Jan 2025)
+  // v1.13.0.1 (1 Jan 2025)
   sprintf(_version_info, "%s (%s)", version, FIRMWARE_BUILD_DATE);
 
 #ifdef PIN_BUZZER
@@ -128,6 +128,9 @@ void UITask::clearMsgPreview() {
 
 void UITask::newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount) {
   _msgcount = msgcount;
+
+  // In autonomous mode, suppress the message preview screen.
+  if (_node_prefs && _node_prefs->autonomous_enabled) return;
 
   if (path_len == 0xFF) {
     sprintf(_origin, "(F) %s", from_name);
@@ -213,18 +216,44 @@ void UITask::renderCurrScreen() {
     _display->print(tmp);
     _display->setColor(DisplayDriver::YELLOW); // last color will be kept on T114
   } else if ((millis() - ui_started_at) < BOOT_SCREEN_MILLIS) { // boot screen
-    // meshcore logo
+    // Brand name - top line
     _display->setColor(DisplayDriver::BLUE);
-    int logoWidth = 128;
-    _display->drawXbm((_display->width() - logoWidth) / 2, 3, meshcore_logo, logoWidth, 13);
+    _display->setTextSize(2);
+    uint16_t headerWidth = _display->getTextWidth("MeshCore");
+    _display->setCursor((_display->width() - headerWidth) / 2, 2);
+    _display->print("MeshCore");
 
-    // version info
+    // Sub-brand
+    _display->setColor(DisplayDriver::GREEN);
+    _display->setTextSize(1);
+    uint16_t teamWidth = _display->getTextWidth("Team Edition");
+    _display->setCursor((_display->width() - teamWidth) / 2, 20);
+    _display->print("Team Edition");
+
+    // Version
     _display->setColor(DisplayDriver::LIGHT);
     _display->setTextSize(1);
     uint16_t textWidth = _display->getTextWidth(_version_info);
-    _display->setCursor((_display->width() - textWidth) / 2, 22);
+    _display->setCursor((_display->width() - textWidth) / 2, 32);
     _display->print(_version_info);
   } else {  // home screen
+    if (_node_prefs->autonomous_enabled) {
+      // Autonomous mode: show status indicator and suppress normal home screen.
+      _display->setColor(DisplayDriver::GREEN);
+      _display->setTextSize(2);
+      uint16_t autoWidth = _display->getTextWidth("AUTONOMOUS");
+      _display->setCursor((_display->width() - autoWidth) / 2, 10);
+      _display->print("AUTONOMOUS");
+
+      // Still show BLE pin so the device can be paired to disable autonomous.
+      if (!_connected && the_mesh.getBLEPin() != 0) {
+        _display->setColor(DisplayDriver::RED);
+        _display->setTextSize(2);
+        _display->setCursor(0, 43);
+        sprintf(tmp, "Pin:%d", the_mesh.getBLEPin());
+        _display->print(tmp);
+      }
+    } else {
     // node name
     _display->setCursor(0, 0);
     _display->setTextSize(1);
@@ -255,6 +284,7 @@ void UITask::renderCurrScreen() {
       _display->setColor(DisplayDriver::GREEN);
     } else {
       _display->setColor(DisplayDriver::LIGHT); 
+    }
     }
   }
   _need_refresh = false;
