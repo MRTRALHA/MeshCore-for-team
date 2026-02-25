@@ -337,8 +337,8 @@ bool EnvironmentSensorManager::begin() {
 bool EnvironmentSensorManager::querySensors(uint8_t requester_permissions, CayenneLPP& telemetry) {
   next_available_channel = TELEM_CHANNEL_SELF + 1;
 
-  if (requester_permissions & TELEM_PERM_LOCATION && gps_active) {
-    telemetry.addGPS(TELEM_CHANNEL_SELF, node_lat, node_lon, node_altitude); // allow lat/lon via telemetry even if no GPS is detected
+  if (requester_permissions & TELEM_PERM_LOCATION && gps_active && gps_fix_valid) {
+    telemetry.addGPS(TELEM_CHANNEL_SELF, node_lat, node_lon, node_altitude);
   }
 
   if (requester_permissions & TELEM_PERM_ENVIRONMENT) {
@@ -718,6 +718,9 @@ void EnvironmentSensorManager::loop() {
       MESH_DEBUG_PRINTLN("lat %f lon %f", node_lat, node_lon);
       node_altitude = ((double)_location->getAltitude()) / 1000.0;
       MESH_DEBUG_PRINTLN("lat %f lon %f alt %f", node_lat, node_lon, node_altitude);
+      gps_fix_valid = true;
+    } else {
+      gps_fix_valid = false;
     }
     #else
     if (_location->isValid()) {
@@ -726,6 +729,9 @@ void EnvironmentSensorManager::loop() {
       MESH_DEBUG_PRINTLN("lat %f lon %f", node_lat, node_lon);
       node_altitude = ((double)_location->getAltitude()) / 1000.0;
       MESH_DEBUG_PRINTLN("lat %f lon %f alt %f", node_lat, node_lon, node_altitude);
+      gps_fix_valid = true;
+    } else {
+      gps_fix_valid = false;
     }
     #endif
     }
