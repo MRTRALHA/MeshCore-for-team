@@ -2,6 +2,9 @@
 
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
+// Forward declarations from base64.hpp (included by BaseChatMesh.cpp) to avoid duplicate symbol errors
+unsigned int encode_base64_length(unsigned int input_length);
+unsigned int encode_base64(const unsigned char* input, unsigned int input_length, unsigned char* output);
 
 // Firmware capability flags - sent in RESP_CODE_SELF_INFO
 #define CAPABILITY_FORWARDING         0x01  // Supports adaptive forwarding control
@@ -418,6 +421,10 @@ ContactInfo*  MyMesh::processAck(const uint8_t *data) {
 
 void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packet *pkt,
                           uint32_t sender_timestamp, const uint8_t *extra, int extra_len, const char *text) {
+  // Autonomous mode: drop messages — device is a GPS beacon/forwarder, not a chat node.
+  // Forwarding and ACKs are handled before this callback is invoked and are unaffected.
+  if (_prefs.autonomous_enabled) return;
+
   int i = 0;
   if (app_target_ver >= 3) {
     out_frame[i++] = RESP_CODE_CONTACT_MSG_RECV_V3;
@@ -517,17 +524,8 @@ bool MyMesh::isInForwardList(const uint8_t* pub_key_prefix) const {
 
 bool MyMesh::hasValidGpsFix() const {
   if (_prefs.gps_enabled == 0) return false;
-
-  const double lat = sensors.node_lat;
-  const double lon = sensors.node_lon;
-
-  if (lat < -90.0 || lat > 90.0) return false;
-  if (lon < -180.0 || lon > 180.0) return false;
-
-  // Startup/default sentinel used when no fix has been captured yet.
-  if (lat == 0.0 && lon == 0.0) return false;
-
-  return true;
+  LocationProvider* loc = sensors.getLocationProvider();
+  return loc != nullptr && loc->isValid();
 }
 
 void MyMesh::updateForwardListPolicyState() {
@@ -551,22 +549,35 @@ void MyMesh::updateForwardListPolicyState() {
 }
 
 bool MyMesh::shouldSendAutonomousUpdate() {
-  if (_prefs.autonomous_enabled == 0) return false;
-  if (_serial && _serial->isConnected()) return false; // autonomous mode is for disconnected operation
-  if (!hasValidGpsFix()) return false;
-
-  unsigned long interval_ms = (unsigned long)_prefs.autonomous_interval_sec * 1000UL;
-  if (interval_ms < 10000UL) interval_ms = 10000UL;
-
-  const unsigned long now = millis();
-  if (autonomous_last_sent_at != 0 && (now - autonomous_last_sent_at) < interval_ms) {
+  if (_prefs.autonomous_enabled == 0) {
+    MESH_DEBUG_PRINTLN("AUTO: skip - autonomous_enabled=0");
+    return false;
+  }
+  if (_serial && _serial->isConnected()) {
+    MESH_DEBUG_PRINTLN("AUTO: skip - serial still connected");
+    return false;
+  }
+  if (!hasValidGpsFix()) {
+    LocationProvider* loc = sensors.getLocationProvider();
+    MESH_DEBUG_PRINTLN("AUTO: skip - no GPS fix (gps_enabled=%d, loc=%s, isValid=%s, lat=%.6f, lon=%.6f)",
+                       (int)_prefs.gps_enabled,
+                       loc ? "present" : "null",
+                       (loc && loc->isValid()) ? "true" : "false",
+                       sensors.node_lat, sensors.node_lon);
     return false;
   }
 
+  unsigned long interval_ms = (unsigned long)_prefs.autonomous_interval_sec * 1000UL;
+  if (interval_ms < 10000UL) interval_ms = 10000UL;
+  const unsigned long now = millis();
+  const bool interval_elapsed = (autonomous_last_sent_at == 0 || (now - autonomous_last_sent_at) >= interval_ms);
+
+  // No distance requirement or no previous fix — use interval only
   if (_prefs.autonomous_min_distance_m == 0 || !autonomous_has_last_fix) {
-    return true;
+    return interval_elapsed;
   }
 
+  // Calculate distance moved since last send
   const double dLat = (sensors.node_lat - autonomous_last_lat) * DEG_TO_RAD;
   const double dLon = (sensors.node_lon - autonomous_last_lon) * DEG_TO_RAD;
   const double a = sin(dLat / 2.0) * sin(dLat / 2.0)
@@ -575,21 +586,97 @@ bool MyMesh::shouldSendAutonomousUpdate() {
   const double c = 2.0 * atan2(sqrt(a), sqrt(1.0 - a));
   const double distance_m = 6371000.0 * c;
 
-  return distance_m >= _prefs.autonomous_min_distance_m;
+  if (distance_m >= _prefs.autonomous_min_distance_m) {
+    // Moved enough — send immediately and reset interval
+    return true;
+  }
+
+  // Hasn't moved enough — send anyway if interval has elapsed (time-based fallback)
+  if (interval_elapsed) {
+    return true;
+  }
+
+  // Neither threshold met — wait silently until one is
+  return false;
 }
 
 void MyMesh::runAutonomousMode() {
   if (!shouldSendAutonomousUpdate()) return;
 
-  if (advert()) {
-    autonomous_last_sent_at = millis();
-    autonomous_last_lat = sensors.node_lat;
-    autonomous_last_lon = sensors.node_lon;
-    autonomous_has_last_fix = true;
-    MESH_DEBUG_PRINTLN("AUTO: autonomous advert sent (interval=%lus, min_dist=%um)",
-                       (unsigned long)_prefs.autonomous_interval_sec,
-                       (unsigned int)_prefs.autonomous_min_distance_m);
+  uint32_t now_ts = getRTCClock()->getCurrentTime();
+  bool sent = false;
+
+  // Prefer sending a #TEL: channel message on the configured autonomous channel.
+  // This is what the app expects for telemetry/map updates and #CAP: peer discovery.
+  if (_prefs.autonomous_channel_hash != 0) {
+    mesh::GroupChannel channel;
+    if (searchChannelsByHash(&_prefs.autonomous_channel_hash, &channel, 1) >= 1) {
+      MESH_DEBUG_PRINTLN("AUTO: channel hash=0x%02x found", (unsigned)_prefs.autonomous_channel_hash);
+
+      // --- Build #TEL: payload ---
+      // 11-byte binary: [lat:4B BE][lon:4B BE][compBatt:1B][phoneBatt:1B][fwdStatus:1B]
+      // Base64-encoded to avoid null bytes in C string transport.
+      uint8_t raw[11];
+      int32_t lat_int = (int32_t)(sensors.node_lat * 1e7);
+      int32_t lon_int = (int32_t)(sensors.node_lon * 1e7);
+      raw[0] = (lat_int >> 24) & 0xFF;
+      raw[1] = (lat_int >> 16) & 0xFF;
+      raw[2] = (lat_int >>  8) & 0xFF;
+      raw[3] =  lat_int        & 0xFF;
+      raw[4] = (lon_int >> 24) & 0xFF;
+      raw[5] = (lon_int >> 16) & 0xFF;
+      raw[6] = (lon_int >>  8) & 0xFF;
+      raw[7] =  lon_int        & 0xFF;
+
+      uint16_t batt_mv = board.getBattMilliVolts();
+      uint8_t batt_enc = (batt_mv < 2750) ? 1 : (uint8_t)(((batt_mv - 2750) / 6) + 2);
+      if (batt_enc < 2) batt_enc = 2;
+      raw[8]  = batt_enc;  // companion battery (encoded)
+      raw[9]  = 0xFF;      // phone battery: 0xFF = autonomous sentinel (no phone attached)
+      raw[10] = 1;         // fwdStatus: no forwarding needed, path=0 -> ((0<<1)|0)+1 = 1
+
+      unsigned char b64[17]; // encode_base64_length(11)=16 + null
+      encode_base64(raw, 11, b64);
+
+      char tel_text[24]; // "#TEL:" (5) + 16 chars b64 + null
+      snprintf(tel_text, sizeof(tel_text), "#TEL:%s", b64);
+
+      if (sendGroupMessage(now_ts, channel, _prefs.node_name, tel_text, strlen(tel_text))) {
+        sent = true;
+        MESH_DEBUG_PRINTLN("AUTO: #TEL: sent on channel hash=0x%02x (lat=%.6f, lon=%.6f, batt=%umv)",
+                           (unsigned)_prefs.autonomous_channel_hash,
+                           sensors.node_lat, sensors.node_lon, (unsigned)batt_mv);
+      } else {
+        MESH_DEBUG_PRINTLN("AUTO: #TEL: sendGroupMessage FAILED for channel hash=0x%02x",
+                           (unsigned)_prefs.autonomous_channel_hash);
+      }
+    } else {
+      MESH_DEBUG_PRINTLN("AUTO: channel hash=0x%02x not found in channel list, skipping update",
+                         (unsigned)_prefs.autonomous_channel_hash);
+      // Dump all channel slot hashes to help diagnose mismatch
+      for (int _di = 0; _di < MAX_GROUP_CHANNELS; _di++) {
+        ChannelDetails _cd;
+        if (getChannel(_di, _cd)) {
+          MESH_DEBUG_PRINTLN("AUTO:   slot[%d] hash[0]=0x%02x name='%s'", _di, (unsigned)_cd.channel.hash[0], _cd.name);
+        }
+      }
+    }
   }
+
+  if (!sent) {
+    // No channel configured or found — nothing to send.
+    MESH_DEBUG_PRINTLN("AUTO: no channel configured or send failed (hash=0x%02x), skipping update",
+                       (unsigned)_prefs.autonomous_channel_hash);
+    return;
+  }
+
+  autonomous_last_sent_at = millis();
+  autonomous_last_lat = sensors.node_lat;
+  autonomous_last_lon = sensors.node_lon;
+  autonomous_has_last_fix = true;
+  MESH_DEBUG_PRINTLN("AUTO: update complete (interval=%lus, min_dist=%um)",
+                     (unsigned long)_prefs.autonomous_interval_sec,
+                     (unsigned int)_prefs.autonomous_min_distance_m);
 }
 
 bool MyMesh::allowPacketForward(const mesh::Packet* packet) {
@@ -699,6 +786,9 @@ void MyMesh::onSignedMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uin
 
 void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packet *pkt, uint32_t timestamp,
                                   const char *text) {
+  // Autonomous mode: drop channel messages — no storage needed for a GPS beacon/forwarder.
+  if (_prefs.autonomous_enabled) return;
+
   int i = 0;
   if (app_target_ver >= 3) {
     out_frame[i++] = RESP_CODE_CHANNEL_MSG_RECV_V3;
