@@ -18,6 +18,82 @@ MeshCore provides the ability to create wireless mesh networks, similar to Mesht
 * Low Power Consumption – Ideal for battery-powered or solar-powered devices.
 * Simple to Deploy – Pre-built example applications make it easy to get started.
 
+---
+
+## 🏷️ Team Edition
+
+This branch (`main`) is the **MeshCore Team Edition** — a custom firmware build layered on top of stock MeshCore. It adds team-oriented features for GPS tracking, smart forwarding control, and unattended autonomous operation. The firmware version is suffixed with a Team build number (e.g. `v1.13.0.1`).
+
+### ✨ Team Edition Features
+
+#### 📡 Adaptive Forwarding Control
+
+The companion radio firmware can now have its forwarding behaviour controlled dynamically by the connected app via new serial commands.
+
+| Command | Code | Description |
+|---|---|---|
+| `CMD_SET_MAX_HOPS` | `73` | Set the maximum flood hop count (`flood_max`). `0` disables forwarding. |
+| `CMD_SET_FORWARD_LIST` | `74` | Push a whitelist of up to 20 contact public-key prefixes (6 bytes each). Only messages from these contacts are forwarded. |
+
+**Forwarding policy rules:**
+- **Public channel messages are always blocked** from being forwarded, preventing channel spam.
+- When a **whitelist** is active, only group messages from contacts in the list are forwarded.
+- The whitelist **expires after 10 minutes** of no policy update, reverting to `flood_max`-only behaviour.
+- If no policy update is received for **60 minutes**, forwarding is **hard-disabled** until the app reconnects and refreshes the policy.
+- The `flood_max` value is persisted to flash, so forwarding behaviour is restored after reboots.
+
+**Firmware capability flags** are reported in `RESP_CODE_SELF_INFO` so the app can detect support:
+- `CAPABILITY_FORWARDING` (`0x01`) — Adaptive forwarding control supported.
+- `CAPABILITY_AUTONOMOUS` (`0x02`) — Autonomous tracker mode supported.
+
+---
+
+#### 🛰️ Autonomous Tracker Mode
+
+Autonomous mode allows a GPS-equipped companion radio to operate as a **standalone GPS beacon** without a phone or app connected. When enabled, the device periodically broadcasts `#TEL:` telemetry messages on a configured channel so other nodes can track it on the map.
+
+| Command | Code | Description |
+|---|---|---|
+| `CMD_GET_AUTONOMOUS_SETTINGS` | `75` | Read the currently persisted autonomous tracker settings. |
+| `CMD_SET_AUTONOMOUS_SETTINGS` | `76` | Write autonomous tracker settings. Requires a GPS unit to be present. |
+
+**Settings:**
+
+| Field | Type | Description |
+|---|---|---|
+| `autonomous_enabled` | `uint8_t` | `0` = disabled, `1` = enabled. |
+| `autonomous_channel_hash` | `uint8_t` | First byte of the target channel's hash. Telemetry is sent on this channel. |
+| `autonomous_interval_sec` | `uint16_t` | Minimum send interval in seconds (range: 10–3600, default: 30). |
+| `autonomous_min_distance_m` | `uint16_t` | Minimum movement in metres before triggering an early send (`0` = interval-only, max: 5000). |
+
+**Behaviour:**
+- The device only sends a telemetry update when a **valid GPS fix** is available.
+- Updates are triggered by **time interval** and/or **minimum distance moved** since the last send (Haversine formula).
+- When autonomous mode is active, **incoming chat and channel messages are silently dropped** — the node acts as a tracker only, not a chat device.
+- The splash screen and home screen both display **"Team Edition"** and an **"AUTONOMOUS"** status indicator when the mode is active.
+- Message preview screens are suppressed in autonomous mode.
+
+**Telemetry payload (`#TEL:` format):**  
+An 11-byte binary struct (latitude, longitude, battery voltage, phone battery, forward status) is Base64-encoded and sent as the text of a group message: `#TEL:<base64>`.
+
+---
+
+#### 🔒 GPS Fix Validation
+
+A `hasValidGpsFix()` helper ensures that GPS data is only acted on when a live, valid fix is available. This prevents stale or invalid coordinates from being transmitted.
+
+---
+
+#### 🔄 Device Name Change Triggers Hard Reset
+
+When the device's advertised name is changed via `CMD_SET_ADVERT_NAME`, a hardware reset (`board.hardReset()`) is performed automatically so the new BLE advertising name takes effect immediately.
+
+---
+
+#### 💾 Backward-Compatible Preferences Storage
+
+New Team Edition preferences (`flood_max`, `autonomous_enabled`, `autonomous_channel_hash`, `autonomous_interval_sec`, `autonomous_min_distance_m`) are appended to the existing preferences file using optional reads, maintaining full backward compatibility with devices running older firmware.
+
 ## 🎯 What Can You Use MeshCore For?
 
 * Off-Grid Communication: Stay connected even in remote areas.
