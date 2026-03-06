@@ -30,6 +30,8 @@ struct NodePrefs {  // persisted to file
   uint8_t autoadd_config;    // bitmask for auto-add contacts config
   uint8_t flood_max;         // Max hops for packet forwarding (0=disabled, 1-127=max hops)
   uint8_t client_repeat;
+  uint8_t path_hash_mode;    // which path mode to use when sending
+  uint8_t autoadd_max_hops;  // 0 = no limit, 1 = direct (0 hops), N = up to N-1 hops (max 64)
 
   // Autonomous tracker settings
   uint8_t autonomous_enabled;        // 0=disabled, 1=enabled
