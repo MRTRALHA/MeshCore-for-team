@@ -563,7 +563,6 @@ void MyMesh::updateForwardListPolicyState() {
 
 bool MyMesh::shouldSendAutonomousUpdate() {
   if (_prefs.autonomous_enabled == 0) {
-    MESH_DEBUG_PRINTLN("AUTO: skip - autonomous_enabled=0");
     return false;
   }
   if (_serial && _serial->isConnected()) {
@@ -1384,40 +1383,24 @@ void MyMesh::handleCmdFrame(size_t len) {
       _most_recent_lastmod = 0;
     }
   } else if (cmd_frame[0] == CMD_SET_ADVERT_NAME && len >= 2) {
-    Serial.println("[DEBUG] CMD_SET_ADVERT_NAME received");
     int nlen = len - 1;
     if (nlen > sizeof(_prefs.node_name) - 1) nlen = sizeof(_prefs.node_name) - 1; // max len
-    
-    // Log old name
-    Serial.print("[DEBUG] Old name: '");
-    Serial.print(_prefs.node_name);
-    Serial.println("'");
-    
-    memcpy(_prefs.node_name, &cmd_frame[1], nlen);
-    _prefs.node_name[nlen] = 0; // null terminator
-    
-    // Log new name
-    Serial.print("[DEBUG] New name: '");
-    Serial.print(_prefs.node_name);
-    Serial.println("'");
-    
-    Serial.println("[DEBUG] Saving preferences...");
+
+    char new_name[sizeof(_prefs.node_name)];
+    memcpy(new_name, &cmd_frame[1], nlen);
+    new_name[nlen] = 0; // null terminator
+
+    bool name_changed = (strcmp(_prefs.node_name, new_name) != 0);
+    memcpy(_prefs.node_name, new_name, nlen + 1);
     savePrefs();
-    Serial.println("[DEBUG] Sending OK frame...");
     writeOKFrame();
-    Serial.println("[DEBUG] Adding delay before reboot...");
-    delay(100);
-    
-    Serial.println("[DEBUG] Checking dirty contacts...");
-    if (dirty_contacts_expiry) {
-      Serial.println("[DEBUG] Saving dirty contacts...");
-      saveContacts();
+
+    if (name_changed) {
+      // BLE advertising name requires a reboot to take effect
+      if (dirty_contacts_expiry) saveContacts();
+      delay(100);
+      board.hardReset();
     }
-    
-    Serial.println("[DEBUG] *** CALLING board.hardReset() NOW ***");
-    Serial.flush(); // Ensure all debug output is sent
-    board.hardReset(); // Use hardware reset for BLE advertising name changes
-    Serial.println("[ERROR] This line should never execute - reset failed!");
   } else if (cmd_frame[0] == CMD_SET_ADVERT_LATLON && len >= 9) {
     int32_t lat, lon, alt = 0;
     memcpy(&lat, &cmd_frame[1], 4);
