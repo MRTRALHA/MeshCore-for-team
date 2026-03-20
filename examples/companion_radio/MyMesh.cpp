@@ -2223,6 +2223,7 @@ void MyMesh::handleCmdFrame(size_t len) {
     _prefs.autonomous_channel_hash = channel_hash;
     _prefs.autonomous_interval_sec = interval_sec;
     _prefs.autonomous_min_distance_m = min_distance_m;
+    if (enabled) _prefs.gps_enabled = 1;  // autonomous mode requires GPS
 
     savePrefs();
     writeOKFrame();
