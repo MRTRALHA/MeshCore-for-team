@@ -16,7 +16,7 @@
 #endif
 
 // TEAM build number appended to base firmware version (increment each release).
-#define TEAM_VERSION "2"
+#define TEAM_VERSION "3"
 // e.g. "v1.13.0.1"
 #define TEAM_FIRMWARE_VERSION FIRMWARE_VERSION "." TEAM_VERSION
 
