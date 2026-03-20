@@ -8,7 +8,7 @@
 #define FIRMWARE_VER_CODE 10
 
 #ifndef FIRMWARE_BUILD_DATE
-#define FIRMWARE_BUILD_DATE "6 Mar 2026"
+#define FIRMWARE_BUILD_DATE "20 Mar 2026"
 #endif
 
 #ifndef FIRMWARE_VERSION
@@ -16,7 +16,7 @@
 #endif
 
 // TEAM build number appended to base firmware version (increment each release).
-#define TEAM_VERSION "1"
+#define TEAM_VERSION "2"
 // e.g. "v1.13.0.1"
 #define TEAM_FIRMWARE_VERSION FIRMWARE_VERSION "." TEAM_VERSION
 
