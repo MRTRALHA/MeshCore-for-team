@@ -22,7 +22,7 @@ MeshCore provides the ability to create wireless mesh networks, similar to Mesht
 
 ## 🏷️ Team Edition
 
-This branch (`main`) is the **MeshCore Team Edition** — a custom firmware build layered on top of stock MeshCore. It adds team-oriented features for GPS tracking, smart forwarding control, and unattended autonomous operation. The firmware version is suffixed with a Team build number (e.g. `v1.13.0.1`).
+This branch (`main`) is the **MeshCore Team Edition** — a custom firmware build layered on top of stock MeshCore. It adds team-oriented features for GPS tracking, smart forwarding control, and unattended autonomous operation. The firmware version is suffixed with a Team build number (e.g. `v1.15.0.5`).
 
 ### ✨ Team Edition Features
 
@@ -93,6 +93,8 @@ When the device's advertised name is changed via `CMD_SET_ADVERT_NAME`, a hardwa
 #### 💾 Backward-Compatible Preferences Storage
 
 New Team Edition preferences (`flood_max`, `autonomous_enabled`, `autonomous_channel_hash`, `autonomous_interval_sec`, `autonomous_min_distance_m`) are appended to the existing preferences file using optional reads, maintaining full backward compatibility with devices running older firmware.
+
+### NOTE: Version 1.15.0.4 Requires MeshCore-TEAM  1.1.0 or higher. No issues should arrise using older version of the app, or older versions but the special firmware functionality will not work.
 
 ## 🎯 What Can You Use MeshCore For?
 
