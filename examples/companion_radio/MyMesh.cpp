@@ -6,6 +6,8 @@
 unsigned int encode_base64_length(unsigned int input_length);
 unsigned int encode_base64(const unsigned char* input, unsigned int input_length, unsigned char* output);
 
+#include "team_protocol.h"  // TEAM custom CMD/RESP codes (200-254 range)
+
 // Firmware capability flags - sent in RESP_CODE_SELF_INFO
 #define CAPABILITY_FORWARDING         0x01  // Supports adaptive forwarding control
 #define CAPABILITY_AUTONOMOUS         0x02  // Future: Autonomous tracker firmware
@@ -69,13 +71,6 @@ unsigned int encode_base64(const unsigned char* input, unsigned int input_length
 #define CMD_SET_DEFAULT_FLOOD_SCOPE   63
 #define CMD_GET_DEFAULT_FLOOD_SCOPE   64
 
-// Custom TEAM extensions (kept out of stock command space)
-#define CMD_GET_RADIO_SETTINGS        72
-#define CMD_SET_MAX_HOPS              73  // Adaptive forwarding control
-#define CMD_SET_FORWARD_LIST          74  // [count][6-byte pubkey prefix] * count
-#define CMD_GET_AUTONOMOUS_SETTINGS   75  // returns persisted autonomous settings
-#define CMD_SET_AUTONOMOUS_SETTINGS   76  // set persisted autonomous settings
-
 // Stats sub-types for CMD_GET_STATS
 #define STATS_TYPE_CORE               0
 #define STATS_TYPE_RADIO              1
@@ -112,7 +107,6 @@ unsigned int encode_base64(const unsigned char* input, unsigned int input_length
 #define RESP_CODE_DEFAULT_FLOOD_SCOPE 28
 
 #define MAX_CHANNEL_DATA_LENGTH       (MAX_FRAME_SIZE - 9)
-#define RESP_CODE_AUTONOMOUS_SETTINGS 27
 
 #define SEND_TIMEOUT_BASE_MILLIS        500
 #define FLOOD_SEND_TIMEOUT_FACTOR       16.0f
