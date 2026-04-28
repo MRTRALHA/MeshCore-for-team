@@ -22,7 +22,7 @@ MeshCore provides the ability to create wireless mesh networks, similar to Mesht
 
 ## 🏷️ Team Edition
 
-This branch (`main`) is the **MeshCore Team Edition** — a custom firmware build layered on top of stock MeshCore. It adds team-oriented features for GPS tracking, smart forwarding control, and unattended autonomous operation. The firmware version is suffixed with a Team build number (e.g. `v1.13.0.1`).
+This branch (`main`) is the **MeshCore Team Edition** — a custom firmware build layered on top of stock MeshCore. It adds team-oriented features for GPS tracking, smart forwarding control, and unattended autonomous operation. The firmware version is suffixed with a Team build number (e.g. `v1.15.0.5`).
 
 ### ✨ Team Edition Features
 
@@ -94,6 +94,8 @@ When the device's advertised name is changed via `CMD_SET_ADVERT_NAME`, a hardwa
 
 New Team Edition preferences (`flood_max`, `autonomous_enabled`, `autonomous_channel_hash`, `autonomous_interval_sec`, `autonomous_min_distance_m`) are appended to the existing preferences file using optional reads, maintaining full backward compatibility with devices running older firmware.
 
+### NOTE: Version 1.15.0.4 Requires MeshCore-TEAM  1.1.0 or higher. No issues should arrise using older version of the app, or older versions but the special firmware functionality will not work.
+
 ## 🎯 What Can You Use MeshCore For?
 
 * Off-Grid Communication: Stay connected even in remote areas.
@@ -105,7 +107,8 @@ New Team Edition preferences (`flood_max`, `autonomous_enabled`, `autonomous_cha
 ## 🚀 How to Get Started
 
 - Watch the [MeshCore Intro Video](https://www.youtube.com/watch?v=t1qne8uJBAc) by Andy Kirby.
-- Read through our [Frequently Asked Questions](./docs/faq.md) section.
+- Watch the [MeshCore Technical Presentation](https://www.youtube.com/watch?v=OwmkVkZQTf4) by Liam Cottle.
+- Read through our [Frequently Asked Questions](./docs/faq.md) and [Documentation](https://docs.meshcore.io).
 - Flash the MeshCore firmware on a supported device.
 - Connect with a supported client.
 
@@ -127,7 +130,7 @@ The Simple Secure Chat example can be interacted with through the Serial Monitor
 
 We have prebuilt firmware ready to flash on supported devices.
 
-- Launch https://flasher.meshcore.co.uk
+- Launch https://meshcore.io/flasher
 - Select a supported device
 - Flash one of the firmware types:
   - Companion, Repeater or Room Server
@@ -149,13 +152,13 @@ The companion firmware can be connected to via BLE, USB or WiFi depending on the
 
 The repeater and room server firmwares can be setup via USB in the web config tool.
 
-- https://config.meshcore.dev
+- https://config.meshcore.io
 
 They can also be managed via LoRa in the mobile app by using the Remote Management feature.
 
 ## 🛠 Hardware Compatibility
 
-MeshCore is designed for devices listed in the [MeshCore Flasher](https://flasher.meshcore.co.uk)
+MeshCore is designed for devices listed in the [MeshCore Flasher](https://meshcore.io/flasher)
 
 ## 📜 License
 
@@ -164,12 +167,14 @@ MeshCore is open-source software released under the MIT License. You are free to
 ## Contributing
 
 Please submit PR's using 'dev' as the base branch!
-For minor changes just submit your PR and I'll try to review it, but for anything more 'impactful' please open an Issue first and start a discussion. Is better to sound out what it is you want to achieve first, and try to come to a consensus on what the best approach is, especially when it impacts the structure or architecture of this codebase.
+For minor changes just submit your PR and we'll try to review it, but for anything more 'impactful' please open an Issue first and start a discussion. Is better to sound out what it is you want to achieve first, and try to come to a consensus on what the best approach is, especially when it impacts the structure or architecture of this codebase.
 
 Here are some general principals you should try to adhere to:
 * Keep it simple. Please, don't think like a high-level lang programmer. Think embedded, and keep code concise, without any unnecessary layers.
 * No dynamic memory allocation, except during setup/begin functions.
 * Use the same brace and indenting style that's in the core source modules. (A .clang-format is prob going to be added soon, but please do NOT retroactively re-format existing code. This just creates unnecessary diffs that make finding problems harder)
+
+Help us prioritize! Please react with thumbs-up to issues/PRs you care about most. We look at reaction counts when planning work.
 
 ## Road-Map / To-Do
 

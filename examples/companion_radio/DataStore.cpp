@@ -251,6 +251,9 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
       file.read((uint8_t *)&_prefs.autonomous_min_distance_m, sizeof(_prefs.autonomous_min_distance_m));
     }
     file.read((uint8_t *)&_prefs.autoadd_max_hops, sizeof(_prefs.autoadd_max_hops));       // 88
+    file.read((uint8_t *)&_prefs.rx_boosted_gain, sizeof(_prefs.rx_boosted_gain));         // 89
+    file.read((uint8_t *)_prefs.default_scope_name, sizeof(_prefs.default_scope_name));    // 90
+    file.read((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key));     // 121
 
     file.close();
   }
@@ -294,7 +297,10 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.autonomous_channel_hash, sizeof(_prefs.autonomous_channel_hash));
     file.write((uint8_t *)&_prefs.autonomous_interval_sec, sizeof(_prefs.autonomous_interval_sec));
     file.write((uint8_t *)&_prefs.autonomous_min_distance_m, sizeof(_prefs.autonomous_min_distance_m));
-    file.write((uint8_t *)&_prefs.autoadd_max_hops, sizeof(_prefs.autoadd_max_hops));      // 88
+    file.write((uint8_t *)&_prefs.autoadd_max_hops, sizeof(_prefs.autoadd_max_hops));       // 88
+    file.write((uint8_t *)&_prefs.rx_boosted_gain, sizeof(_prefs.rx_boosted_gain));         // 89
+    file.write((uint8_t *)_prefs.default_scope_name, sizeof(_prefs.default_scope_name));    // 90
+    file.write((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key));     // 121
 
     file.close();
   }
