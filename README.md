@@ -5,7 +5,7 @@ MeshCore is a lightweight, portable C++ library that enables multi-hop packet ro
 ## 🔍 What is MeshCore?
 
 MeshCore now supports a range of LoRa devices, allowing for easy flashing without the need to compile firmware manually. Users can flash a pre-built binary using tools like Adafruit ESPTool and interact with the network through a serial console.
-MeshCore provides the ability to create wireless mesh networks, similar to Meshtastic and Reticulum but with a focus on lightweight multi-hop packet routing for embedded projects. Unlike Meshtastic, which is tailored for casual LoRa communication, or Reticulum, which offers advanced networking, MeshCore balances simplicity with scalability, making it ideal for custom embedded solutions., where devices (nodes) can communicate over long distances by relaying messages through intermediate nodes. This is especially useful in off-grid, emergency, or tactical situations where traditional communication infrastructure is unavailable.
+MeshCore provides the ability to create wireless mesh networks, similar to Meshtastic and Reticulum but with a focus on lightweight multi-hop packet routing for embedded projects. Unlike Meshtastic, which is tailored for casual LoRa communication, or Reticulum, which offers advanced networking, MeshCore balances simplicity with scalability, making it ideal for custom embedded solutions, where devices (nodes) can communicate over long distances by relaying messages through intermediate nodes. This is especially useful in off-grid, emergency, or tactical situations where traditional communication infrastructure is unavailable.
 
 ## ⚡ Key Features
 
@@ -22,7 +22,7 @@ MeshCore provides the ability to create wireless mesh networks, similar to Mesht
 
 ## 🏷️ Team Edition
 
-This branch (`main`) is the **MeshCore Team Edition** — a custom firmware build layered on top of stock MeshCore. It adds team-oriented features for GPS tracking, smart forwarding control, and unattended autonomous operation. The firmware version is suffixed with a Team build number (e.g. `v1.15.0.5`).
+This branch (`main`) is the **MeshCore Team Edition** — a custom firmware build layered on top of stock MeshCore. It adds team-oriented features for GPS tracking, smart forwarding control, and unattended autonomous operation. The firmware version is the upstream version suffixed with a Team build number — currently `v1.17.1.4` (`FIRMWARE_VERSION` + `TEAM_VERSION`, both in [`MyMesh.h`](./examples/companion_radio/MyMesh.h)).
 
 ### ✨ Team Edition Features
 
@@ -32,8 +32,10 @@ The companion radio firmware can now have its forwarding behaviour controlled dy
 
 | Command | Code | Description |
 |---|---|---|
-| `CMD_SET_MAX_HOPS` | `73` | Set the maximum flood hop count (`flood_max`). `0` disables forwarding. |
-| `CMD_SET_FORWARD_LIST` | `74` | Push a whitelist of up to 20 contact public-key prefixes (6 bytes each). Only messages from these contacts are forwarded. |
+| `CMD_SET_MAX_HOPS` | `201` | Set the maximum flood hop count (`flood_max`). `0` disables forwarding. |
+| `CMD_SET_FORWARD_LIST` | `202` | Push a whitelist of up to 20 contact public-key prefixes (6 bytes each). Only messages from these contacts are forwarded. |
+
+> All Team Edition protocol constants live in [`team_protocol.h`](./examples/companion_radio/team_protocol.h) and use the `200-254` range so they never collide with upstream stock codes (currently maxing out at `CMD 65` / `RESP 28` / `PUSH 0x90`).
 
 **Forwarding policy rules:**
 - **Public channel messages are always blocked** from being forwarded, preventing channel spam.
@@ -54,8 +56,10 @@ Autonomous mode allows a GPS-equipped companion radio to operate as a **standalo
 
 | Command | Code | Description |
 |---|---|---|
-| `CMD_GET_AUTONOMOUS_SETTINGS` | `75` | Read the currently persisted autonomous tracker settings. |
-| `CMD_SET_AUTONOMOUS_SETTINGS` | `76` | Write autonomous tracker settings. Requires a GPS unit to be present. |
+| `CMD_GET_AUTONOMOUS_SETTINGS` | `203` | Read the currently persisted autonomous tracker settings. |
+| `CMD_SET_AUTONOMOUS_SETTINGS` | `204` | Write autonomous tracker settings. Requires a GPS unit to be present. |
+
+The reply to `CMD_GET_AUTONOMOUS_SETTINGS` is `RESP_CODE_AUTONOMOUS_SETTINGS` (`200`).
 
 **Settings:**
 
@@ -70,7 +74,7 @@ Autonomous mode allows a GPS-equipped companion radio to operate as a **standalo
 - The device only sends a telemetry update when a **valid GPS fix** is available.
 - Updates are triggered by **time interval** and/or **minimum distance moved** since the last send (Haversine formula).
 - When autonomous mode is active, **incoming chat and channel messages are silently dropped** — the node acts as a tracker only, not a chat device.
-- The splash screen and home screen both display **"Team Edition"** and an **"AUTONOMOUS"** status indicator when the mode is active.
+- The splash screen displays **"Team Edition"** branding; the home screen shows an **"AUTONOMOUS"** status indicator in place of the message count when the mode is active.
 - Message preview screens are suppressed in autonomous mode.
 
 **Telemetry payload (`#TEL:` format):**  
@@ -90,11 +94,21 @@ When the device's advertised name is changed via `CMD_SET_ADVERT_NAME`, a hardwa
 
 ---
 
-#### 💾 Backward-Compatible Preferences Storage
+#### 💾 Preferences Storage
 
-New Team Edition preferences (`flood_max`, `autonomous_enabled`, `autonomous_channel_hash`, `autonomous_interval_sec`, `autonomous_min_distance_m`) are appended to the existing preferences file using optional reads, maintaining full backward compatibility with devices running older firmware.
+Upstream replaced the old fixed-offset binary prefs blob (`/new_prefs`) with a keyed serialisation to `/prefs.json`, handled by [`ConfigSerializer`](./src/helpers/ConfigSerializer.h). Team Edition preferences are registered as named keys in [`NodePrefs.h`](./examples/companion_radio/NodePrefs.h) so they persist across reboots:
 
-### NOTE: Version 1.15.0.4 Requires MeshCore-TEAM  1.1.0 or higher. No issues should arrise using older version of the app, or older versions but the special firmware functionality will not work.
+| Preference | JSON key |
+|---|---|
+| `flood_max` | `repeat.f_max` |
+| `autonomous_enabled` | `auto.en` |
+| `autonomous_channel_hash` | `auto.chan` |
+| `autonomous_interval_sec` | `auto.int` |
+| `autonomous_min_distance_m` | `auto.dist` |
+
+`DataStore::loadPrefsInt()` remains only as a one-time migration reader for the legacy binary file. Because the Team Edition fields were previously written at fork-specific byte offsets, they are **not** carried across that migration — on the first boot after upgrading from an older Team Edition build, `flood_max` and the autonomous settings reset to their defaults once, then persist normally from then on. Note that `flood_max` defaults to `0`, which disables forwarding until the app sends `CMD_SET_MAX_HOPS`.
+
+### NOTE: Requires MeshCore-TEAM 1.1.0 or higher. No issues should arise using older versions of the app, but the special firmware functionality will not work.
 
 ## 🎯 What Can You Use MeshCore For?
 
@@ -106,18 +120,18 @@ New Team Edition preferences (`flood_max`, `autonomous_enabled`, `autonomous_cha
 
 ## 🚀 How to Get Started
 
-- Watch the [MeshCore Intro Video](https://www.youtube.com/watch?v=t1qne8uJBAc) by Andy Kirby.
+- Watch the [MeshCore QuickStart Playlist](https://www.youtube.com/watch?v=iaFltojJrAc&list=PLshzThxhw4O4WU_iZo3NmNZOv6KMrUuF9) by The Comms Channel
 - Watch the [MeshCore Technical Presentation](https://www.youtube.com/watch?v=OwmkVkZQTf4) by Liam Cottle.
 - Read through our [Frequently Asked Questions](./docs/faq.md) and [Documentation](https://docs.meshcore.io).
 - Flash the MeshCore firmware on a supported device.
 - Connect with a supported client.
 
-For developers;
+For developers:
 
 - Install [PlatformIO](https://docs.platformio.org) in [Visual Studio Code](https://code.visualstudio.com).
 - Clone and open the MeshCore repository in Visual Studio Code.
 - See the example applications you can modify and run:
-  - [Companion Radio](./examples/companion_radio) - For use with an external chat app, over BLE, USB or WiFi.
+  - [Companion Radio](./examples/companion_radio) - For use with an external chat app, over BLE, USB or Wi-Fi.
   - [KISS Modem](./examples/kiss_modem) - Serial KISS protocol bridge for host applications. ([protocol docs](./docs/kiss_modem_protocol.md))
   - [Simple Repeater](./examples/simple_repeater) - Extends network coverage by relaying messages.
   - [Simple Room Server](./examples/simple_room_server) - A simple BBS server for shared Posts.
@@ -140,7 +154,7 @@ We have prebuilt firmware ready to flash on supported devices.
 
 **Companion Firmware**
 
-The companion firmware can be connected to via BLE, USB or WiFi depending on the firmware type you flashed.
+The companion firmware can be connected to via BLE, USB or Wi-Fi depending on the firmware type you flashed.
 
 - Web: https://app.meshcore.nz
 - Android: https://play.google.com/store/apps/details?id=com.liamcottle.meshcore.android
@@ -150,7 +164,7 @@ The companion firmware can be connected to via BLE, USB or WiFi depending on the
 
 **Repeater and Room Server Firmware**
 
-The repeater and room server firmwares can be setup via USB in the web config tool.
+The repeater and room server firmware can be set up via USB in the web config tool.
 
 - https://config.meshcore.io
 
@@ -167,14 +181,22 @@ MeshCore is open-source software released under the MIT License. You are free to
 ## Contributing
 
 Please submit PR's using 'dev' as the base branch!
-For minor changes just submit your PR and we'll try to review it, but for anything more 'impactful' please open an Issue first and start a discussion. Is better to sound out what it is you want to achieve first, and try to come to a consensus on what the best approach is, especially when it impacts the structure or architecture of this codebase.
+For minor changes just submit your PR and we'll try to review it, but for anything more 'impactful' please open an Issue first and start a discussion. It is better to sound out what it is you want to achieve first, and try to come to a consensus on what the best approach is, especially when it impacts the structure or architecture of this codebase.
 
-Here are some general principals you should try to adhere to:
+Here are some general principles you should try to adhere to:
 * Keep it simple. Please, don't think like a high-level lang programmer. Think embedded, and keep code concise, without any unnecessary layers.
 * No dynamic memory allocation, except during setup/begin functions.
-* Use the same brace and indenting style that's in the core source modules. (A .clang-format is prob going to be added soon, but please do NOT retroactively re-format existing code. This just creates unnecessary diffs that make finding problems harder)
+* Use the same brace and indenting style that's in the core source modules. (A .clang-format is probably going to be added soon, but please do NOT retroactively re-format existing code. This just creates unnecessary diffs that make finding problems harder)
 
 Help us prioritize! Please react with thumbs-up to issues/PRs you care about most. We look at reaction counts when planning work.
+
+### Running unit tests
+
+To run unit tests, run the following command:
+
+```bash
+pio test --environment native --verbose
+```
 
 ## Road-Map / To-Do
 
@@ -195,4 +217,4 @@ There are a number of fairly major features in the pipeline, with no particular 
 
 - Report bugs and request features on the [GitHub Issues](https://github.com/ripplebiz/MeshCore/issues) page.
 - Find additional guides and components on [my site](https://buymeacoffee.com/ripplebiz).
-- Join [MeshCore Discord](https://discord.gg/BMwCtwHj5V) to chat with the developers and get help from the community.
+- Join [MeshCore Discord](https://meshcore.gg) to chat with the developers and get help from the community.
