@@ -669,6 +669,7 @@ bool EnvironmentSensorManager::querySensors(uint8_t requester_permissions, Cayen
 
   if (requester_permissions & TELEM_PERM_LOCATION && gps_active) {
     telemetry.addGPS(TELEM_CHANNEL_SELF, node_lat, node_lon, node_altitude);
+    telemetry.addSwitch(TELEM_CHANNEL_SELF, gps_has_fix);
   }
 
   if (requester_permissions & TELEM_PERM_ENVIRONMENT) {
@@ -878,6 +879,7 @@ void EnvironmentSensorManager::start_gps() {
 
 void EnvironmentSensorManager::stop_gps() {
   gps_active = false;
+  gps_has_fix = false;
   #ifdef RAK_WISBLOCK_GPS
     pinMode(gpsResetPin, OUTPUT);
     digitalWrite(gpsResetPin, LOW);
