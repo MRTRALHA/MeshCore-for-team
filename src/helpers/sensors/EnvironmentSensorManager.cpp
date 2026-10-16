@@ -862,6 +862,7 @@ bool EnvironmentSensorManager::gpsIsAwake(uint8_t ioPin){
 #endif
 
 void EnvironmentSensorManager::start_gps() {
+  if (gps_active) return;  // already running: don't re-power or reset it (would drop the fix)
   gps_active = true;
   #ifdef RAK_WISBLOCK_GPS
     pinMode(gpsResetPin, OUTPUT);
